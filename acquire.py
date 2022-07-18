@@ -35,106 +35,75 @@ def get_all_urls():
     return urls
 
 
-def get_blog_articles(urls, cache=False):
-    '''
-    This function takes in a list of Codeup Blog urls and a parameter
-    with default cache == False which returns a df from a csv file.
-    If cache == True, the function scrapes the title and text for each url, creates a list of dictionaries
-    with the title and text for each blog, converts list to df, and returns df.
-    '''
-
-    if cache == False:
-        df = pd.read_csv('big_blogs.csv', index_col=0)
-    else:
-        headers = {'User-Agent': 'Codeup Data Science'} 
-
-        # Create an empty list to hold dictionaries
-        articles = []
-
-        # Loop through each url in our list of urls
-        for url in urls:
-
-            # get request to each url saved in response
-            response = get(url, headers=headers)
-
-            # Create soup object from response text and parse
-            soup = BeautifulSoup(response.text, 'html.parser')
-
-            # Save the title of each blog in variable title
-            title = soup.find('h1', itemprop='headline' ).text
-
-            # Save the text in each blog to variable text
-            text = soup.find('div', itemprop='text').text
-
-            # Create a dictionary holding the title and text for each blog
-            article = {'title': title, 'content': text}
-
-            # Add each dictionary to the articles list of dictionaries
-            articles.append(article)
-        # convert our list of dictionaries to a df
-        df = pd.DataFrame(articles)
-
-        # Write df to csv file for faster access
-        df.to_csv('big_blogs.csv')
+def get_blog_articles_data(refresh=False):
     
-    return df
-
-
-def get_news_articles(cache=False):
-    '''
-    This function uses a cache parameter with default cache == False to give the option of 
-    returning in a df of inshorts topics and info by reading a csv file or
-    of doing a fresh scrape of inshort pages with topics business, sports, technology,
-    and entertainment and writing the returned df to a csv file.
-    '''
-    # default to read in a csv instead of scrape for df
-    if cache == False:
-        df = pd.read_csv('articles.csv', index_col=0)
+    if not os.path.isfile('blog_articles.csv') or refresh:
         
-    # cache == True completes a fresh scrape for df    
-    else:
-    
-        # Set base_url and headers that will be used in get request
-
-        base_url = 'https://inshorts.com/en/read/'
+        url = 'https://codeup.com/blog/'
         headers = {'User-Agent': 'Codeup Data Science'}
+        response = get(url, headers=headers)
 
-        # List of topics to scrape
-        topics = ['business', 'sports', 'technology', 'entertainment']
+        soup = BeautifulSoup(response.content, 'html.parser')
 
-        # Create an empty list, articles, to hold our dictionaries
+        links = [link['href'] for link in soup.select('h2 a[href]')]
+
         articles = []
 
-        for topic in topics:
+        for url in links:
 
-            # Get a response object from the main inshorts page
-            response = get(base_url + topic, headers=headers)
+            url_response = get(url, headers=headers)
+            soup = BeautifulSoup(url_response.text, 'html.parser')
 
-            # Create soup object using response from inshort
-            soup = BeautifulSoup(response.text, 'html.parser')
+            title = soup.find('h1', class_='entry-title').text
+            content = soup.find('div', class_='entry-content').text.strip()
 
-            # Scrape a ResultSet of all the news cards on the page
-            cards = soup.find_all('div', class_='news-card')
+            article_dict = {
+                'title': title,
+                'content': content
+            }
 
-            # Loop through each news card on the page and get what we want
-            for card in cards:
-                title = card.find('span', itemprop='headline' ).text
-                author = card.find('span', class_='author').text
-                content = card.find('div', itemprop='articleBody').text
-
-                # Create a dictionary, article, for each news card
-                article = ({'topic': topic, 
-                            'title': title, 
-                            'author': author, 
-                            'content': content})
-
-                # Add the dictionary, article, to our list of dictionaries, articles.
-                articles.append(article)
-            
-        # Why not return it as a DataFrame?!
-        df = pd.DataFrame(articles)
+            articles.append(article_dict)
         
-        # Write df to csv for future use
-        df.to_csv('articles.csv')
+        blog_article_df = pd.DataFrame(articles)
+        
+        blog_article_df.to_csv('blog_articles.csv', index=False)
+        
+    return pd.read_csv('blog_articles.csv')
+
+def get_news_articles_data(refresh=False):
     
-    return df
+    if not os.path.isfile('news_articles.csv') or refresh:
+        
+        url = 'https://inshorts.com/en/read'
+        response = get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        categories = [li.text.lower() for li in soup.select('li')][1:]
+        categories[0] = 'national'
+
+        inshorts = []
+
+        for category in categories:
+
+            cat_url = url + '/' + category
+            response = get(url)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            titles = [span.text for span in soup.find_all('span', itemprop='headline')]
+            contents = [div.text for div in soup.find_all('div', itemprop='articleBody')]
+
+            for i in range(len(titles)):
+
+                article = {
+                    'title': titles[i],
+                    'content': contents[i],
+                    'category': category,
+                }
+
+                inshorts.append(article)
+                
+        inshorts_article_df = pd.DataFrame(inshorts)
+        
+        inshorts_article_df.to_csv('news_articles.csv', index=False)
+                
+    return pd.read_csv('news_articles.csv')
